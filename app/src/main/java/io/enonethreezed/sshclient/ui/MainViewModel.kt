@@ -32,6 +32,10 @@ class MainViewModel(
     var uiState by mutableStateOf(buildState(repository.load(), AppSection.WORKSPACE))
         private set
 
+    init {
+        ensureDefaultKeyOnFirstLaunch()
+    }
+
     fun navigateTo(section: AppSection) {
         uiState = uiState.copy(section = section)
     }
@@ -141,22 +145,57 @@ class MainViewModel(
         }
 
         if (authMethod == AuthMethod.KEY) {
-            if (bootstrapPassword.isBlank()) {
-                uiState = uiState.copy(toastMessage = "Password is required to install the public key.")
-                return false
-            }
             val selectedKey = uiState.keys.firstOrNull { it.id == keyId }
             if (selectedKey == null) {
                 uiState = uiState.copy(toastMessage = "Selected key was not found.")
                 return false
             }
+            val hostValue = host.trim()
+            val usernameValue = username.trim()
+            val labelValue = label.trim()
             uiState = uiState.copy(keyOperationInProgress = true, toastMessage = null)
             viewModelScope.launch {
+                val keyLogin = withContext(Dispatchers.IO) {
+                    bootstrapService.verifyPublicKeyLogin(
+                        host = hostValue,
+                        port = port,
+                        username = usernameValue,
+                        privateKey = selectedKey.privateKey,
+                    )
+                }
+
+                if (keyLogin.isSuccess) {
+                    persist(
+                        uiState.data.copy(
+                            profiles = uiState.profiles + MachineProfile(
+                                id = "profile-${UUID.randomUUID()}",
+                                label = labelValue,
+                                host = hostValue,
+                                port = port,
+                                username = usernameValue,
+                                authMethod = authMethod,
+                                keyId = keyId,
+                                colorSeed = stableColor(labelValue),
+                            )
+                        ),
+                        toast = "Verified key authentication and saved $labelValue.",
+                    )
+                    return@launch
+                }
+
+                if (bootstrapPassword.isBlank()) {
+                    uiState = uiState.copy(
+                        keyOperationInProgress = false,
+                        toastMessage = "Key login failed. Enter the server password once to install the public key.",
+                    )
+                    return@launch
+                }
+
                 val bootstrap = withContext(Dispatchers.IO) {
                     bootstrapService.bootstrapWithPasswordThenKey(
-                        host = host.trim(),
+                        host = hostValue,
                         port = port,
-                        username = username.trim(),
+                        username = usernameValue,
                         password = bootstrapPassword,
                         publicKey = selectedKey.publicKey,
                         privateKey = selectedKey.privateKey,
@@ -167,16 +206,16 @@ class MainViewModel(
                         uiState.data.copy(
                             profiles = uiState.profiles + MachineProfile(
                                 id = "profile-${UUID.randomUUID()}",
-                                label = label.trim(),
-                                host = host.trim(),
+                                label = labelValue,
+                                host = hostValue,
                                 port = port,
-                                username = username.trim(),
+                                username = usernameValue,
                                 authMethod = authMethod,
                                 keyId = keyId,
-                                colorSeed = stableColor(label.trim()),
+                                colorSeed = stableColor(labelValue),
                             )
                         ),
-                        toast = "Provisioned and saved ${label.trim()} using key authentication.",
+                        toast = "Installed key and saved $labelValue.",
                     )
                 }.onFailure { error ->
                     uiState = uiState.copy(
@@ -185,7 +224,7 @@ class MainViewModel(
                     )
                 }
             }
-            return true
+            return false
         }
 
         val profile = MachineProfile(
@@ -203,6 +242,33 @@ class MainViewModel(
             toast = "Saved ${profile.label}",
         )
         return true
+    }
+
+    private fun ensureDefaultKeyOnFirstLaunch() {
+        if (uiState.keys.isNotEmpty()) return
+        uiState = uiState.copy(keyOperationInProgress = true, toastMessage = null)
+        viewModelScope.launch {
+            val result = runCatching {
+                withContext(Dispatchers.Default) {
+                    SshKeyFactory.generate(
+                        name = "Default key",
+                        algorithm = SshAlgorithm.ED25519,
+                        sizeLabel = "255-bit (Ed25519)",
+                    )
+                }
+            }
+            result.onSuccess { generatedKey ->
+                persist(
+                    uiState.data.copy(keys = uiState.keys + generatedKey),
+                    toast = "Generated default SSH key pair.",
+                )
+            }.onFailure { error ->
+                uiState = uiState.copy(
+                    keyOperationInProgress = false,
+                    toastMessage = error.message ?: "Default key generation failed.",
+                )
+            }
+        }
     }
 
     fun saveWorkspace(name: String, profileIds: List<String>, launchOnStartup: Boolean) {

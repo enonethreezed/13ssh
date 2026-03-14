@@ -674,11 +674,11 @@ private fun MachinesScreen(
                 OutlinedTextField(
                     value = bootstrapPassword,
                     onValueChange = { bootstrapPassword = it },
-                    label = { Text("Bootstrap password (one-time)") },
+                    label = { Text("Server password (only if needed)") },
                     modifier = Modifier.fillMaxWidth(),
                 )
                 Text(
-                    text = "Required to connect once, install the public key, disconnect, and reconnect using key authentication.",
+                    text = "The app first tries key login. If it fails, this password is used once to install the public key and retry.",
                     style = MaterialTheme.typography.labelMedium,
                     color = Fog,
                 )
@@ -709,9 +709,9 @@ private fun MachinesScreen(
                     }
                 },
                 modifier = Modifier.fillMaxWidth(),
-                enabled = authMethod == AuthMethod.PASSWORD || state.keys.isNotEmpty(),
+                enabled = !state.keyOperationInProgress && (authMethod == AuthMethod.PASSWORD || state.keys.isNotEmpty()),
             ) {
-                Text(if (authMethod == AuthMethod.KEY) "Provision host and save" else "Save machine")
+                Text(if (authMethod == AuthMethod.KEY) "Verify key and save" else "Save machine")
             }
         }
 

@@ -11,6 +11,15 @@ import java.io.File
 class SshBootstrapService(context: Context) {
     private val appContext = context.applicationContext
 
+    fun verifyPublicKeyLogin(
+        host: String,
+        port: Int,
+        username: String,
+        privateKey: String,
+    ): Result<Unit> = runCatching {
+        verifyPublicKeyLoginOrThrow(host, port, username, privateKey)
+    }
+
     fun bootstrapWithPasswordThenKey(
         host: String,
         port: Int,
@@ -20,7 +29,7 @@ class SshBootstrapService(context: Context) {
         privateKey: String,
     ): Result<Unit> = runCatching {
         installPublicKey(host, port, username, password, publicKey)
-        verifyPublicKeyLogin(host, port, username, privateKey)
+        verifyPublicKeyLoginOrThrow(host, port, username, privateKey)
     }
 
     private fun installPublicKey(
@@ -49,7 +58,7 @@ class SshBootstrapService(context: Context) {
         }
     }
 
-    private fun verifyPublicKeyLogin(
+    private fun verifyPublicKeyLoginOrThrow(
         host: String,
         port: Int,
         username: String,
